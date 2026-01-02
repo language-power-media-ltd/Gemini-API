@@ -72,8 +72,15 @@ class Model(Enum):
 
     @classmethod
     def from_name(cls, name: str):
+        # Apply alias mapping if exists (image variants to base models)
+        model_aliases = {
+            "gemini-2.5-flash-image": "gemini-2.5-flash",
+            "gemini-3-pro-image": "gemini-3.0-pro",
+        }
+        mapped_name = model_aliases.get(name, name)
+        
         for model in cls:
-            if model.model_name == name:
+            if model.model_name == mapped_name:
                 return model
 
         raise ValueError(
@@ -105,6 +112,7 @@ class ErrorCode(IntEnum):
 
     TEMPORARY_ERROR_1013 = 1013  # Randomly raised when generating with certain models, but disappears soon after
     USAGE_LIMIT_EXCEEDED = 1037
+    ACCOUNT_BANNED = 1040  # Account is banned by Google
     MODEL_INCONSISTENT = 1050
     MODEL_HEADER_INVALID = 1052
     IP_TEMPORARILY_BLOCKED = 1060

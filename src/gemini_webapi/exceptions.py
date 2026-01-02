@@ -60,3 +60,11 @@ class TemporarilyBlocked(GeminiError):
     """
 
     pass
+
+
+class AccountBanned(GeminiError):
+    """
+    Exception for account banned by Google.
+    """
+
+    pass

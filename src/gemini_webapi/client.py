@@ -336,6 +336,7 @@ class GeminiClient(GemMixin):
         model: Model | str | dict = Model.UNSPECIFIED,
         gem: Gem | str | None = None,
         chat: Optional["ChatSession"] = None,
+        image_generation: bool = False,
         **kwargs,
     ) -> ModelOutput:
         """
@@ -356,6 +357,10 @@ class GeminiClient(GemMixin):
             Pass either a `gemini_webapi.types.Gem` object or a gem id string.
         chat: `ChatSession`, optional
             Chat data to retrieve conversation history. If None, will automatically generate a new chat id when sending post request.
+        image_generation: `bool`, optional
+            Enable image generation mode for stable image output. Equivalent to checking
+            "Create images" in Gemini web UI. When enabled, simple prompts like "a cat"
+            will reliably generate images. Default is False.
         kwargs: `dict`, optional
             Additional arguments which will be passed to the post request.
             Refer to `httpx.AsyncClient.request` for more information.
@@ -399,38 +404,40 @@ class GeminiClient(GemMixin):
         if self.auto_close:
             await self.reset_close_task()
 
+        # Build inner request list for flexible parameter support
+        inner_req_list: list[Any] = [None] * 101
+        inner_req_list[0] = (
+            [
+                prompt,
+                0,
+                None,
+                [
+                    [
+                        [await upload_file(file, self.proxy)],
+                        parse_file_name(file),
+                    ]
+                    for file in files
+                ],
+            ]
+            if files
+            else [prompt]
+        )
+        inner_req_list[2] = chat and chat.metadata
+        if gem_id:
+            inner_req_list[19] = gem_id
+        if image_generation:
+            inner_req_list[49] = 14  # Enable image generation mode (like "Create images" in web UI)
+
+        inner_json = json.dumps(inner_req_list).decode()
+        payload = json.dumps([None, inner_json]).decode()
+
         try:
             response = await self.client.post(
                 Endpoint.GENERATE.value,
                 headers=model.model_header,
                 data={
                     "at": self.access_token,
-                    "f.req": json.dumps(
-                        [
-                            None,
-                            json.dumps(
-                                [
-                                    files
-                                    and [
-                                        prompt,
-                                        0,
-                                        None,
-                                        [
-                                            [
-                                                [await upload_file(file, self.proxy)],
-                                                parse_file_name(file),
-                                            ]
-                                            for file in files
-                                        ],
-                                    ]
-                                    or [prompt],
-                                    None,
-                                    chat and chat.metadata,
-                                ]
-                                + (gem_id and [None] * 16 + [gem_id] or [])
-                            ).decode(),
-                        ]
-                    ).decode(),
+                    "f.req": payload,
                 },
                 **kwargs,
             )
@@ -673,6 +680,7 @@ class GeminiClient(GemMixin):
         model: Model | str | dict = Model.UNSPECIFIED,
         gem: "Gem | str | None" = None,
         chat: "ChatSession | None" = None,
+        image_generation: bool = False,
         **kwargs,
     ):
         """
@@ -690,6 +698,10 @@ class GeminiClient(GemMixin):
             Specify a gem to use as system prompt for the chat session.
         chat: `ChatSession`, optional
             Chat data to retrieve conversation history.
+        image_generation: `bool`, optional
+            Enable image generation mode for stable image output. Equivalent to checking
+            "Create images" in Gemini web UI. When enabled, simple prompts like "a cat"
+            will reliably generate images. Default is False.
         kwargs: `dict`, optional
             Additional arguments which will be passed to the post request.
 
@@ -738,6 +750,8 @@ class GeminiClient(GemMixin):
         inner_req_list[7] = 1  # Enable Snapshot Streaming
         if gem_id:
             inner_req_list[19] = gem_id
+        if image_generation:
+            inner_req_list[49] = 14  # Enable image generation mode (like "Create images" in web UI)
         inner_json = json.dumps(inner_req_list).decode()
         payload = json.dumps([None, inner_json]).decode()
 
@@ -1100,6 +1114,7 @@ class ChatSession:
         self,
         prompt: str,
         files: list[str | Path] | None = None,
+        image_generation: bool = False,
         **kwargs,
     ) -> ModelOutput:
         """
@@ -1112,6 +1127,10 @@ class ChatSession:
             Prompt provided by user.
         files: `list[str | Path]`, optional
             List of file paths to be attached.
+        image_generation: `bool`, optional
+            Enable image generation mode for stable image output. Equivalent to checking
+            "Create images" in Gemini web UI. When enabled, simple prompts like "a cat"
+            will reliably generate images. Default is False.
         kwargs: `dict`, optional
             Additional arguments which will be passed to the post request.
             Refer to `httpx.AsyncClient.request` for more information.
@@ -1141,6 +1160,7 @@ class ChatSession:
             model=self.model,
             gem=self.gem,
             chat=self,
+            image_generation=image_generation,
             **kwargs,
         )
 
